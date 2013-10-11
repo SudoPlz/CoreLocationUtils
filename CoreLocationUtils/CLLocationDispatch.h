@@ -75,6 +75,8 @@ typedef enum{
 // the (one and only) shared LocationDelegate
 + (CLLocationDispatch*) sharedDispatch;
 
+
+@property (nonatomic, assign) BOOL rejectCachedLocations;
 // direct access to location manager. Use this property to tweak location/heading accuracy etc.
 @property (nonatomic, strong) IBOutlet CLLocationManager *locationManager; 
 
@@ -117,7 +119,7 @@ typedef enum{
 
 - (void) flushLogCache:(CLLocationDispatchLogCacheType)cacheType; //use either kLocationsCache or kHeadingsCache
 
-
+-(void) updateLocForLocChangesMoreThanMeters: (float) meters;
 
 
 @end

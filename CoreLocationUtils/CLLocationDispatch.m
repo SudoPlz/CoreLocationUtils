@@ -55,16 +55,23 @@
     return gInstance;
 }
 
-
+-(void) updateLocForLocChangesMoreThanMeters: (float) meters
+{
+    if(meters>=0)
+    {
+        _locationManager.headingFilter = meters;
+    }
+}
 - (id) init
 {
     self = [super init];
     if (self) {
+        _rejectCachedLocations = YES;
         _locationManager = [[CLLocationManager alloc] init];
 
         // set app-specific locationManager properties
-        _locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation;
-        _locationManager.headingFilter = kCLHeadingFilterNone;
+        _locationManager.desiredAccuracy = kCLLocationAccuracyBest;
+        [self updateLocForLocChangesMoreThanMeters:kCLHeadingFilterNone];
         _locationManager.delegate = self;
         
         _locationManager.purpose = NSLocalizedStringWithDefaultValue(@"LocationManagerPurpose", nil, [NSBundle mainBundle], @"In order to provide place search and route guidance, StreetWise needs your permission to use Location Services.", @"LocationManager purpose");
@@ -155,7 +162,14 @@
         [_listeners addObject:listener];
         if (_newLocation) {
             // immediately update new listener with current location
-            [listener locationManager:self.isRunningDemo?nil:_locationManager  didUpdateToLocation:_newLocation fromLocation:_oldLocation];
+            
+//            [listener locationManager:self.isRunningDemo?nil:_locationManager  didUpdateToLocation:_newLocation fromLocation:_oldLocation];
+            if(_newLocation)
+            {
+                NSArray* locs = @[_newLocation];
+                [listener locationManager:self.isRunningDemo?nil:_locationManager didUpdateLocations:locs];
+            }
+            
         }
         if (_newHeading) {
             [listener locationManager:_locationManager didUpdateHeading:_newHeading];
@@ -170,11 +184,30 @@
 
 
 
-#pragma mark - CLLocationManagerDelegate
 
-- (void)locationManager:(CLLocationManager *)manager didUpdateToLocation:(CLLocation *)newLocation fromLocation:(CLLocation *)oldLocation
+
+#pragma mark - CLLocationManagerDelegate NEW
+
+-(void) locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray *)locations
 {
-    // cache & log the new location if we're not running a demo 
+    
+    
+    Release(_oldLocation);
+    _oldLocation = _newLocation;
+    CLLocation* newLocation = [locations lastObject];
+    
+    
+    if(_rejectCachedLocations)
+    {
+        NSTimeInterval locationAge = -[newLocation.timestamp timeIntervalSinceNow];
+        if (locationAge > 5.0)
+        {
+            NSLog(@"Rejected cached coordinate update.");
+            return;
+        }
+    }
+    
+    // cache & log the new location if we're not running a demo
     if (self.logLocationData && !self.isRunningDemo) {
         // empty cache if it is full
         if ([_locations count] > kLogCacheSize) {
@@ -183,13 +216,11 @@
         [_locations addObject:newLocation];
     }
     
-    Release(_oldLocation);
-    _oldLocation = Retain(oldLocation);
     
     // verify newLocation has speed and course info, required for supporting dead-reckoning.
     CLLocationSpeed speed = newLocation.speed;
     if (speed <= 0 && self.oldLocation) {
-        speed = [newLocation speedTravelledFromLocation:self.oldLocation];            
+        speed = [newLocation speedTravelledFromLocation:self.oldLocation];
     }
     CLLocationDirection course = newLocation.course;
     if (course <= 0 && self.oldLocation) {
@@ -197,17 +228,74 @@
     }
     Release(_newLocation);
     _newLocation = [[CLLocation alloc] initWithCoordinate:newLocation.coordinate altitude:newLocation.altitude horizontalAccuracy:newLocation.horizontalAccuracy verticalAccuracy:newLocation.verticalAccuracy course:course speed:speed timestamp:newLocation.timestamp];
-
+    
     //NSLog(@"new location: %@", self.newLocation);
     
     [_listeners enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
         id<CLLocationManagerDelegate> listener = obj;
-        if ([listener respondsToSelector:@selector(locationManager:didUpdateToLocation:fromLocation:)]) {
-            [listener locationManager:manager didUpdateToLocation:_newLocation fromLocation:_oldLocation];
+//        if ([listener respondsToSelector:@selector(locationManager:didUpdateToLocation:fromLocation:)]) {
+//            [listener locationManager:manager didUpdateToLocation:_newLocation fromLocation:_oldLocation];
+//        }
+        if( [listener respondsToSelector:@selector(locationManager:didUpdateLocations:)])
+        {
+            [listener locationManager:manager didUpdateLocations:locations];
         }
+        
+        
     }];
     
 }
+
+//#pragma mark - CLLocationManagerDelegate OLD
+//
+//- (void)locationManager:(CLLocationManager *)manager didUpdateToLocation:(CLLocation *)newLocation fromLocation:(CLLocation *)oldLocation
+//{
+//    
+//    
+//    if(_rejectCachedLocations)
+//    {
+//        NSTimeInterval locationAge = -[newLocation.timestamp timeIntervalSinceNow];
+//        if (locationAge > 5.0)
+//        {
+//            NSLog(@"Rejected cached coordinate update.");
+//            return;
+//        }
+//    }
+//    
+//    // cache & log the new location if we're not running a demo 
+//    if (self.logLocationData && !self.isRunningDemo) {
+//        // empty cache if it is full
+//        if ([_locations count] > kLogCacheSize) {
+//            [self flushLogCache:kLocationsCache];
+//        }
+//        [_locations addObject:newLocation];
+//    }
+//    
+//    Release(_oldLocation);
+//    _oldLocation = Retain(oldLocation);
+//    
+//    // verify newLocation has speed and course info, required for supporting dead-reckoning.
+//    CLLocationSpeed speed = newLocation.speed;
+//    if (speed <= 0 && self.oldLocation) {
+//        speed = [newLocation speedTravelledFromLocation:self.oldLocation];            
+//    }
+//    CLLocationDirection course = newLocation.course;
+//    if (course <= 0 && self.oldLocation) {
+//        course = [self.oldLocation directionToLocation:newLocation];
+//    }
+//    Release(_newLocation);
+//    _newLocation = [[CLLocation alloc] initWithCoordinate:newLocation.coordinate altitude:newLocation.altitude horizontalAccuracy:newLocation.horizontalAccuracy verticalAccuracy:newLocation.verticalAccuracy course:course speed:speed timestamp:newLocation.timestamp];
+//
+//    //NSLog(@"new location: %@", self.newLocation);
+//    
+//    [_listeners enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
+//        id<CLLocationManagerDelegate> listener = obj;
+//        if ([listener respondsToSelector:@selector(locationManager:didUpdateToLocation:fromLocation:)]) {
+//            [listener locationManager:manager didUpdateToLocation:_newLocation fromLocation:_oldLocation];
+//        }
+//    }];
+//    
+//}
 
 - (void)locationManager:(CLLocationManager *)manager didUpdateHeading:(CLHeading *)newHeading
 {
@@ -392,8 +480,15 @@
     NSInteger i = [locationIndex intValue];
     NSInteger index = i+_startIndexForPlayingLog;
     CLLocation *currLocation = [_loggedLocations objectAtIndex:index];
-    CLLocation *prevLocation = i>0?[_loggedLocations objectAtIndex:index-1]:nil;
-    [self locationManager:_locationManager didUpdateToLocation:currLocation fromLocation:prevLocation];    
+    //CLLocation *prevLocation = i>0?[_loggedLocations objectAtIndex:index-1]:nil;
+    if(currLocation)
+    {
+        NSArray* locs = @[currLocation];
+        [self locationManager:_locationManager didUpdateLocations:locs];
+    }
+    
+    
+//    [self locationManager:_locationManager didUpdateToLocation:currLocation fromLocation:prevLocation];    
 }
 
 
